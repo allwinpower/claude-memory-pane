@@ -1,0 +1,6 @@
+{
+  "name": "claude-memory-pane",
+  "description": "A /memories pane for Claude Code: view, edit and delete a project's auto memory",
+  "owner": { "name": "allwinpower" },
+  "plugins": [{ "name": "memory-pane", "source": "./" }]
+}
