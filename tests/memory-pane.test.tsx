@@ -196,3 +196,40 @@ test('a memory Claude writes shows up by itself, with no Refresh button', async 
   expect(await ui.find({ type: 'Text', text: '3 memories' })).toBeDefined()
   await ui.unmount()
 })
+
+test('＋ opens a template; saving writes the file and lists it in the index', async ($, on) => {
+  const disk = seed()
+  engine(on, disk, [])
+  const ui = await open($)
+
+  await ui.press({ key: 'new' })
+  expect((await ui.find({ key: 'new-draft' }))?.text).toContain('name: ')
+  await ui.input({
+    key: 'new-draft',
+    text: '---\nname: Coffee order\ndescription: Flat white, no sugar\nmetadata:\n  type: user\n---\n\nAlways.\n',
+    kind: 'submit',
+  })
+
+  expect(disk[`${DIR}/coffee-order.md`]).toContain('Flat white')
+  expect(disk[`${DIR}/MEMORY.md`]).toBe(
+    '- [Role](user-role.md) — what they do\n- [Deploy](deploy-rule.md) — when to deploy\n- [Coffee order](coffee-order.md) — Flat white, no sugar\n',
+  )
+  expect(await ui.find({ key: 'new-draft' })).toBe(undefined)
+  expect(await ui.find({ type: 'Text', text: 'Created coffee-order.md.' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: '3 memories' })).toBeDefined()
+  await ui.unmount()
+})
+
+test('saving an untouched template is refused', async ($, on) => {
+  const disk = seed()
+  const before = { ...disk }
+  engine(on, disk, [])
+  const ui = await open($)
+
+  await ui.press({ key: 'new' })
+  await ui.input({ key: 'new-draft', text: (await ui.find({ key: 'new-draft' }))?.text ?? '', kind: 'submit' })
+
+  expect(disk).toEqual(before)
+  expect(await ui.find({ key: 'new-draft' })).toBeDefined()
+  await ui.unmount()
+})

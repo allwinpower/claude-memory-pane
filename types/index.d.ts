@@ -16,6 +16,7 @@ declare module 'claude-code' {
       editing: Shaped<Editing | null>
       confirming: string | null
       notice: string
+      newDraft: string | null
     }
   }
 }

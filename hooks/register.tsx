@@ -1,7 +1,18 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import { INDEX, memoryDirOf, projectOf, sortFiles, summarize, withoutLink } from './memory'
+import {
+  INDEX,
+  TEMPLATE,
+  freeName,
+  memoryDirOf,
+  projectOf,
+  slugOf,
+  sortFiles,
+  summarize,
+  withLink,
+  withoutLink,
+} from './memory'
 
 const PANE = 'memories'
 // How often the folder is checked for changes while the pane is open.
@@ -17,6 +28,7 @@ const editing = atom({ plugin: 'memory-pane', key: 'editing' } as const, null, {
 })
 const confirming = atom({ plugin: 'memory-pane', key: 'confirming' } as const, null)
 const notice = atom({ plugin: 'memory-pane', key: 'notice' } as const, '')
+const newDraft = atom({ plugin: 'memory-pane', key: 'newDraft' } as const, null)
 
 // The folder the engine loaded this session's auto memory from; before the
 // folder has a MEMORY.md, the one it will write to.
@@ -108,6 +120,38 @@ const save = async ($: EngineInterface, typed?: string): Promise<void> => {
   await refresh($)
 }
 
+const startNew = async ($: EngineInterface): Promise<void> => {
+  await update($, editing, () => null)
+  await update($, confirming, () => null)
+  await say($, '')
+  await update($, newDraft, () => TEMPLATE)
+}
+
+// Writes the draft as a new file named after its `name` field and lists it
+// in the index, the way Claude's own memory writes do.
+const create = async ($: EngineInterface, typed?: string): Promise<void> => {
+  const draft = typed ?? (await read($, newDraft))
+  if (draft === null || draft.trim() === '' || draft.trim() === TEMPLATE.trim()) {
+    await say($, 'Nothing to save: fill in the name or some text.')
+
+    return
+  }
+  const dir = await read($, dirAtom)
+  const parsed = summarize('new.md', draft)
+  const title = parsed.title === 'new' ? slugOf(parsed.description || parsed.body.slice(0, 40)) : parsed.title
+  const taken = (await read($, files)).map(file => file.name)
+  const name = freeName(slugOf(title), taken)
+  await $.fs.write(`${dir}/${name}`, draft)
+
+  const indexPath = `${dir}/${INDEX}`
+  const index = await $.fs.read(indexPath).catch(() => '')
+  await $.fs.write(indexPath, withLink(index, title, name, parsed.description))
+
+  await update($, newDraft, () => null)
+  await say($, `Created ${name}.`)
+  await refresh($)
+}
+
 const remove = async ($: EngineInterface, name: string): Promise<void> => {
   const dir = await read($, dirAtom)
   await update($, confirming, () => null)
@@ -178,6 +222,7 @@ export const register: Register = on => {
     const edit = await read($, editing)
     const asked = await read($, confirming)
     const said = await read($, notice)
+    const fresh = await read($, newDraft)
     const count = list.filter(file => file.name !== INDEX).length
 
     // A desktop draws a Button's label and not its children, so an icon is
@@ -190,12 +235,34 @@ export const register: Register = on => {
     return (
       <Box flexDirection="column" gap={1}>
         <Box flexDirection="column">
-          <Text>{count === 1 ? '1 memory' : `${count} memories`}</Text>
+          <Box flexDirection="row" justifyContent="space-between" alignItems="center" gap={1}>
+            <Text>{count === 1 ? '1 memory' : `${count} memories`}</Text>
+            {fresh === null && Input !== undefined && icon('new', '＋', () => startNew($))}
+          </Box>
           <Text dimColor wrap="truncate-start">
             {dir === '' ? 'Looking for the memory folder' : dir}
           </Text>
           {said !== '' && <Text dimColor>{said}</Text>}
         </Box>
+        {fresh !== null && Input !== undefined && (
+          <Box flexDirection="column">
+            <Box flexDirection="row" gap={1} alignItems="center">
+              <Text bold>New memory</Text>
+              {e.surface === 'terminal' && icon('save-new', '✓', () => create($))}
+              {icon('cancel-new', '✕', () => update($, newDraft, () => null))}
+            </Box>
+            <Text dimColor>Fill in name, description and type, then the text below the header.</Text>
+            <Input
+              key="new-draft"
+              value={fresh}
+              rows={10}
+              submitLabel="✓"
+              autoFocus
+              onInput={value => void update($, newDraft, current => (current === null ? null : value))}
+              onSubmit={value => create($, value)}
+            />
+          </Box>
+        )}
         {list.length === 0 && <Text dimColor>No memories for this project yet.</Text>}
         {list.map(file => {
           const isEditing = edit?.name === file.name

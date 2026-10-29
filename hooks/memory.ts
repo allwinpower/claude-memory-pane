@@ -63,3 +63,38 @@ export const withoutLink = (index: string, name: string): string => {
     .filter(line => !link.test(line))
     .join('\n')
 }
+
+// What a new memory starts from: the frontmatter Claude's own memories carry.
+export const TEMPLATE = `---
+name: 
+description: 
+metadata:
+  type: project
+---
+
+`
+
+// A file name from a memory's name: lowercase, words joined by '-'.
+export const slugOf = (title: string): string =>
+  title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '') || 'memory'
+
+// The first of `slug.md`, `slug-2.md`, ... that no existing file takes.
+export const freeName = (slug: string, taken: readonly string[]): string => {
+  for (let n = 1; ; n += 1) {
+    const name = n === 1 ? `${slug}.md` : `${slug}-${n}.md`
+    if (!taken.includes(name)) {
+      return name
+    }
+  }
+}
+
+// The index with one line added for the file, as Claude writes them.
+export const withLink = (index: string, title: string, name: string, hook: string): string => {
+  const line = `- [${title}](${name})${hook === '' ? '' : ` — ${hook}`}`
+  const body = index.trimEnd()
+
+  return body === '' ? `${line}\n` : `${body}\n${line}\n`
+}
