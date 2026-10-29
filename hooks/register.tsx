@@ -1,9 +1,13 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
+import type { NewMemory } from '../types'
+
 import {
   INDEX,
-  TEMPLATE,
+  EMPTY_NEW,
+  TYPES,
+  fileOf,
   freeName,
   memoryDirOf,
   projectOf,
@@ -28,7 +32,9 @@ const editing = atom({ plugin: 'memory-pane', key: 'editing' } as const, null, {
 })
 const confirming = atom({ plugin: 'memory-pane', key: 'confirming' } as const, null)
 const notice = atom({ plugin: 'memory-pane', key: 'notice' } as const, '')
-const newDraft = atom({ plugin: 'memory-pane', key: 'newDraft' } as const, null)
+const newDraft = atom({ plugin: 'memory-pane', key: 'newDraft' } as const, null, {
+  shape: 'new-1',
+})
 
 // The folder the engine loaded this session's auto memory from; before the
 // folder has a MEMORY.md, the one it will write to.
@@ -124,28 +130,33 @@ const startNew = async ($: EngineInterface): Promise<void> => {
   await update($, editing, () => null)
   await update($, confirming, () => null)
   await say($, '')
-  await update($, newDraft, () => TEMPLATE)
+  await update($, newDraft, () => EMPTY_NEW)
 }
 
-// Writes the draft as a new file named after its `name` field and lists it
-// in the index, the way Claude's own memory writes do.
-const create = async ($: EngineInterface, typed?: string): Promise<void> => {
-  const draft = typed ?? (await read($, newDraft))
-  if (draft === null || draft.trim() === '' || draft.trim() === TEMPLATE.trim()) {
-    await say($, 'Nothing to save: fill in the name or some text.')
+const setNew = ($: EngineInterface, patch: Partial<NewMemory>) =>
+  update($, newDraft, current => (current === null ? null : { ...current, ...patch }))
+
+// Writes the form as a new file named after its name and lists it in the
+// index, the way Claude's own memory writes do.
+const create = async ($: EngineInterface): Promise<void> => {
+  const form = await read($, newDraft)
+  if (form === null) {
+    return
+  }
+  const title = form.name.trim() || form.description.trim().slice(0, 40)
+  if (title === '' || form.body.trim() === '') {
+    await say($, 'A memory needs a name and some text.')
 
     return
   }
   const dir = await read($, dirAtom)
-  const parsed = summarize('new.md', draft)
-  const title = parsed.title === 'new' ? slugOf(parsed.description || parsed.body.slice(0, 40)) : parsed.title
   const taken = (await read($, files)).map(file => file.name)
   const name = freeName(slugOf(title), taken)
-  await $.fs.write(`${dir}/${name}`, draft)
+  await $.fs.write(`${dir}/${name}`, fileOf({ ...form, name: title }))
 
   const indexPath = `${dir}/${INDEX}`
   const index = await $.fs.read(indexPath).catch(() => '')
-  await $.fs.write(indexPath, withLink(index, title, name, parsed.description))
+  await $.fs.write(indexPath, withLink(index, title, name, form.description.trim()))
 
   await update($, newDraft, () => null)
   await say($, `Created ${name}.`)
@@ -217,6 +228,7 @@ export const register: Register = on => {
     const elements = $.ui.resolve(e)
     const { Box, Text, Button, Markdown } = elements
     const Input = 'Input' in elements ? elements.Input : undefined
+    const Select = 'Select' in elements ? elements.Select : undefined
     const dir = await read($, dirAtom)
     const list = await read($, files)
     const edit = await read($, editing)
@@ -237,30 +249,54 @@ export const register: Register = on => {
         <Box flexDirection="column">
           <Box flexDirection="row" justifyContent="space-between" alignItems="center" gap={1}>
             <Text>{count === 1 ? '1 memory' : `${count} memories`}</Text>
-            {fresh === null && Input !== undefined && icon('new', '＋', () => startNew($))}
+            {fresh === null && Input !== undefined && Select !== undefined && icon('new', '＋', () => startNew($))}
           </Box>
           <Text dimColor wrap="truncate-start">
             {dir === '' ? 'Looking for the memory folder' : dir}
           </Text>
           {said !== '' && <Text dimColor>{said}</Text>}
         </Box>
-        {fresh !== null && Input !== undefined && (
-          <Box flexDirection="column">
-            <Box flexDirection="row" gap={1} alignItems="center">
-              <Text bold>New memory</Text>
-              {e.surface === 'terminal' && icon('save-new', '✓', () => create($))}
-              {icon('cancel-new', '✕', () => update($, newDraft, () => null))}
-            </Box>
-            <Text dimColor>Fill in name, description and type, then the text below the header.</Text>
+        {fresh !== null && Input !== undefined && Select !== undefined && (
+          <Box flexDirection="column" gap={1} borderStyle="single" borderDimColor paddingX={1}>
+            <Text bold>New memory</Text>
             <Input
-              key="new-draft"
-              value={fresh}
-              rows={10}
-              submitLabel="✓"
+              key="new-name"
+              label="Name"
+              placeholder="short title, e.g. coffee order"
+              value={fresh.name}
               autoFocus
-              onInput={value => void update($, newDraft, current => (current === null ? null : value))}
-              onSubmit={value => create($, value)}
+              onInput={value => void setNew($, { name: value })}
+              onSubmit={() => create($)}
             />
+            <Input
+              key="new-description"
+              label="When it matters"
+              placeholder="one line Claude reads to decide whether to open this"
+              value={fresh.description}
+              onInput={value => void setNew($, { description: value })}
+              onSubmit={() => create($)}
+            />
+            <Select
+              key="new-type"
+              label="Kind"
+              options={TYPES}
+              value={fresh.type}
+              onSelect={value => void setNew($, { type: value })}
+            />
+            <Input
+              key="new-body"
+              label="Text"
+              placeholder="the memory itself"
+              value={fresh.body}
+              rows={6}
+              submitLabel="✓"
+              onInput={value => void setNew($, { body: value })}
+              onSubmit={() => create($)}
+            />
+            <Box flexDirection="row" gap={1}>
+              <Button key="save-new" variant="primary" label="Save" onPress={() => create($)} />
+              <Button key="cancel-new" label="Cancel" onPress={() => update($, newDraft, () => null)} />
+            </Box>
           </Box>
         )}
         {list.length === 0 && <Text dimColor>No memories for this project yet.</Text>}

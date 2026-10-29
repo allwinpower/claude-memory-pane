@@ -1,4 +1,4 @@
-import type { MemoryFile } from '../types'
+import type { MemoryFile, NewMemory } from '../types'
 
 export const INDEX = 'MEMORY.md'
 
@@ -64,14 +64,26 @@ export const withoutLink = (index: string, name: string): string => {
     .join('\n')
 }
 
-// What a new memory starts from: the frontmatter Claude's own memories carry.
-export const TEMPLATE = `---
-name: 
-description: 
+// The kinds Claude's own memories use, with what each is for.
+export const TYPES: readonly { value: string; label: string }[] = [
+  { value: 'user', label: 'About me (role, preferences)' },
+  { value: 'feedback', label: 'How Claude should work' },
+  { value: 'project', label: 'Project (goals, decisions)' },
+  { value: 'reference', label: 'Reference (links, tickets)' },
+]
+
+export const EMPTY_NEW: NewMemory = { name: '', description: '', type: 'project', body: '' }
+
+// The file a new memory is written as, in the shape Claude writes them.
+export const fileOf = (memory: NewMemory): string =>
+  `---
+name: ${memory.name.trim()}
+description: ${memory.description.trim()}
 metadata:
-  type: project
+  type: ${memory.type}
 ---
 
+${memory.body.trim()}
 `
 
 // A file name from a memory's name: lowercase, words joined by '-'.

@@ -11,8 +11,8 @@ of every session. This pane shows that folder.
 ## What it does
 
 - Lists every memory with its name, type, description and full text.
-- `＋` opens a prefilled template; saving writes the new file, named after its
-  `name` field, and adds its line to `MEMORY.md`.
+- `＋` opens a form (name, when it matters, kind, text); Save writes the new
+  file, named after the name, and adds its line to `MEMORY.md`.
 - `✎` opens the file inline for editing; save with the field's `✓` button or
   Enter (Shift+Enter adds a line), cancel with `✕`.
 - `🗑` moves a memory to the macOS Trash after a confirmation, and removes its

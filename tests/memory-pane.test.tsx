@@ -197,39 +197,43 @@ test('a memory Claude writes shows up by itself, with no Refresh button', async 
   await ui.unmount()
 })
 
-test('＋ opens a template; saving writes the file and lists it in the index', async ($, on) => {
+test('＋ opens a form; Save writes the file and lists it in the index', async ($, on) => {
   const disk = seed()
   engine(on, disk, [])
   const ui = await open($)
 
   await ui.press({ key: 'new' })
-  expect((await ui.find({ key: 'new-draft' }))?.text).toContain('name: ')
-  await ui.input({
-    key: 'new-draft',
-    text: '---\nname: Coffee order\ndescription: Flat white, no sugar\nmetadata:\n  type: user\n---\n\nAlways.\n',
-    kind: 'submit',
-  })
+  await ui.input({ key: 'new-name', text: 'Coffee order', kind: 'change' })
+  await ui.input({ key: 'new-description', text: 'Flat white, no sugar', kind: 'change' })
+  await ui.select({ key: 'new-type', value: 'user' })
+  await ui.input({ key: 'new-body', text: 'Always.', kind: 'change' })
+  await ui.press({ key: 'save-new' })
 
-  expect(disk[`${DIR}/coffee-order.md`]).toContain('Flat white')
+  expect(disk[`${DIR}/coffee-order.md`]).toBe(
+    '---\nname: Coffee order\ndescription: Flat white, no sugar\nmetadata:\n  type: user\n---\n\nAlways.\n',
+  )
   expect(disk[`${DIR}/MEMORY.md`]).toBe(
     '- [Role](user-role.md) — what they do\n- [Deploy](deploy-rule.md) — when to deploy\n- [Coffee order](coffee-order.md) — Flat white, no sugar\n',
   )
-  expect(await ui.find({ key: 'new-draft' })).toBe(undefined)
+  expect(await ui.find({ key: 'new-name' })).toBe(undefined)
   expect(await ui.find({ type: 'Text', text: 'Created coffee-order.md.' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: '3 memories' })).toBeDefined()
   await ui.unmount()
 })
 
-test('saving an untouched template is refused', async ($, on) => {
+test('an empty form is refused and Cancel closes it', async ($, on) => {
   const disk = seed()
   const before = { ...disk }
   engine(on, disk, [])
   const ui = await open($)
 
   await ui.press({ key: 'new' })
-  await ui.input({ key: 'new-draft', text: (await ui.find({ key: 'new-draft' }))?.text ?? '', kind: 'submit' })
-
+  await ui.press({ key: 'save-new' })
   expect(disk).toEqual(before)
-  expect(await ui.find({ key: 'new-draft' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'needs a name' })).toBeDefined()
+  expect(await ui.find({ key: 'new-name' })).toBeDefined()
+
+  await ui.press({ key: 'cancel-new' })
+  expect(await ui.find({ key: 'new-name' })).toBe(undefined)
   await ui.unmount()
 })

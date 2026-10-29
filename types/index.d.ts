@@ -8,6 +8,8 @@ export type MemoryFile = {
 
 export type Editing = { name: string; draft: string }
 
+export type NewMemory = { name: string; description: string; type: string; body: string }
+
 declare module 'claude-code' {
   interface PluginState {
     'memory-pane': {
@@ -16,7 +18,7 @@ declare module 'claude-code' {
       editing: Shaped<Editing | null>
       confirming: string | null
       notice: string
-      newDraft: string | null
+      newDraft: Shaped<NewMemory | null>
     }
   }
 }
