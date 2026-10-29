@@ -1,6 +1,6 @@
 {
   "name": "memory-pane",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "A /memories pane that lists this project's auto memory and lets you edit or delete each entry",
   "author": { "name": "allwinpower" },
   "license": "MIT",

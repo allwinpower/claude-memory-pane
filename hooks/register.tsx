@@ -21,6 +21,11 @@ import {
 const PANE = 'memories'
 // How often the folder is checked for changes while the pane is open.
 const POLL_MS = 2000
+// How long /memories waits for the app to attach to a session that has just
+// started; within a hook's 10 s budget.
+const ATTACH_MS = 4000
+// How `$.ui.open` says no window is attached to draw the pane in yet.
+const NO_SURFACE = 'no-surface'
 // Change a tag when that value's fields change: it declines what an earlier
 // version stored, which outlives a reload.
 const dirAtom = atom({ plugin: 'memory-pane', key: 'dir' } as const, '')
@@ -94,6 +99,18 @@ const pollOnce = async ($: EngineInterface): Promise<void> => {
   if (stamp(await memoryEntries($, dir)) !== lastSeen) {
     await refresh($)
   }
+}
+
+// Settles when a window next attaches to the session.
+let attached: (() => void) | undefined
+let nextAttach: Promise<void> | undefined
+
+const waitForAttach = (): Promise<void> => {
+  nextAttach ??= new Promise(resolve => {
+    attached = resolve
+  })
+
+  return nextAttach
 }
 
 const say = async ($: EngineInterface, text: string): Promise<void> => {
@@ -197,12 +214,37 @@ export const register: Register = on => {
     return next(e)
   })
 
-  on('command.run', { command: 'memories' }, async $ => {
+  on('session.attach', async ($, e, next) => {
+    const joined = await next(e)
+    attached?.()
+    attached = undefined
+    nextAttach = undefined
+
+    return joined
+  })
+
+  on('command.run', { command: 'memories' }, async ($, e, next) => {
     await refresh($, true)
-    const opened = await $.ui.open({ id: PANE, title: 'Memories' })
+    // Watched before the open, so an attach in between is not missed.
+    const attaching = waitForAttach()
+    let opened = await $.ui.open({ id: PANE, title: 'Memories' })
+    // The app attaches a moment after a session starts; until then the pane
+    // is open with nowhere to draw. It draws once the app attaches.
+    if (!opened.isPlaced && opened.reason.startsWith(NO_SURFACE)) {
+      await Promise.race([
+        attaching,
+        $.clock.sleep(ATTACH_MS, { signal: next.signal }).catch(() => undefined),
+      ])
+      opened = await $.ui.open({ id: PANE, title: 'Memories' })
+    }
+    if (opened.isPlaced) {
+      return { text: 'Memories pane opened.' }
+    }
 
     return {
-      text: opened.isPlaced ? 'Memories pane opened.' : `Memories pane not shown: ${opened.reason}`,
+      text: opened.reason.startsWith(NO_SURFACE)
+        ? 'Memories opens once the app connects to this session.'
+        : `Memories pane not shown: ${opened.reason}`,
     }
   })
 

@@ -25,12 +25,28 @@ const seed = (): Record<string, string> => ({
     '---\nname: deploy-rule\ndescription: "Deploy only when asked"\nmetadata:\n  type: feedback\n---\n',
 })
 
+// What `$.ui.open` answers before the app has attached to the session.
+const NOT_ATTACHED = 'no-surface: no surface is attached ($.session.surfaces() is empty)'
+
 // Stands for the engine: a worktree session of /work/app with no MEMORY.md
-// loaded yet, so the mod works the folder out from git.
-const engine = (on: On, disk: Record<string, string>, runs: string[][]) => {
+// loaded yet, so the mod works the folder out from git. The app's window is
+// attached from the start unless a test says otherwise.
+const engine = (
+  on: On,
+  disk: Record<string, string>,
+  runs: string[][],
+  app = { isAttached: true },
+) => {
   mock.env(on, { HOME: '/home/me' })
   on('command.register', () => ({ value: { command: 'memories' } }))
-  on('ui.open', () => ({ value: { isPlaced: true } }))
+  on('ui.open', () => ({
+    value: app.isAttached ? { isPlaced: true } : { isPlaced: false, reason: NOT_ATTACHED },
+  }))
+  on('session.attach', (_, e) => {
+    app.isAttached = true
+
+    return { clientId: e.clientId }
+  })
   on('ui.panes', () => ({
     value: [{ id: 'memories', title: 'Memories', isShown: true, isFocused: false, isPlaced: true }],
   }))
@@ -80,6 +96,27 @@ const open = async ($: Parameters<Parameters<typeof test>[1]>[0]) => {
 
   return $.ui.mount({ ...PANE, surface: 'desktop' })
 }
+
+test('the first /memories of a new session waits for the app to attach', async ($, on) => {
+  const clock = mock.clock(on)
+  engine(on, seed(), [], { isAttached: false })
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  const ran = $.command.run({ command: 'memories' })
+  await clock.settle()
+  await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
+
+  expect((await ran).text).toBe('Memories pane opened.')
+})
+
+test('with no app attached /memories says the pane opens once one does', async ($, on) => {
+  const clock = mock.clock(on)
+  engine(on, seed(), [], { isAttached: false })
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  const ran = $.command.run({ command: 'memories' })
+  await clock.advance(4000)
+
+  expect((await ran).text).toBe('Memories opens once the app connects to this session.')
+})
 
 test("the pane lists the main repo's memories from a worktree", async ($, on) => {
   const runs: string[][] = []
