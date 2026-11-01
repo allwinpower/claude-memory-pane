@@ -1,0 +1,69 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    # The mod's own checks, on the Claude Code the desktop app ships. Neither
+    # command needs a login.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm install -g @anthropic-ai/claude-code@2.1.309
+      - run: claude plugin validate .
+      - run: claude plugin test .
+
+  automerge:
+    # Adapted from visireach/visiGo's `automerge` job. Merges an automated PR
+    # the moment it is green, so nobody has to come back and press the
+    # button. GitHub's own auto-merge waits on REQUIRED checks, and this repo
+    # has none; allowing it without them merges at once, before CI has said
+    # anything.
+    #
+    # Only `allwin/` branches (the app's branch prefix; `claude/` before
+    # 2026-10-23), or a PR labelled `automerge`: a person's PR is merged by
+    # that person. A red run never gets here; Auto-fix pushes a fix, which
+    # runs this again.
+    #
+    # The merge names the SHA this run tested: a push after the run started
+    # makes GitHub refuse with 409 instead of merging code nobody checked.
+    needs: [test]
+    if: >-
+      github.event_name == 'pull_request'
+      && (startsWith(github.head_ref, 'allwin/')
+          || startsWith(github.head_ref, 'claude/')
+          || contains(github.event.pull_request.labels.*.name, 'automerge'))
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Squash-merge the tested commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+          SHA: ${{ github.event.pull_request.head.sha }}
+          TITLE: ${{ github.event.pull_request.title }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          # Behind main: tested against an old base. Say so and stop; Auto-fix
+          # reports it as a conflict-shaped problem to fix.
+          state=$(gh api "repos/$REPO/pulls/$PR" --jq .mergeable_state)
+          echo "mergeable_state=$state"
+          case "$state" in
+            behind|dirty) echo "PR is $state against main; not merging."; exit 1 ;;
+          esac
+          gh api -X PUT "repos/$REPO/pulls/$PR/merge" \
+            -f merge_method=squash -f sha="$SHA" -f commit_title="$TITLE (#$PR)"

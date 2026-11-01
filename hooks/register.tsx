@@ -208,6 +208,10 @@ export const register: Register = on => {
     await $.command.register({
       name: 'memories',
       description: "Show this project's auto memory in a pane",
+      // Opens the pane while Claude is working instead of waiting in the
+      // queue for the turn to end; the hook reads files and opens a pane,
+      // nothing of the turn's state.
+      immediate: true,
     })
     $.clock.every(POLL_MS, () => void pollOnce($).catch(() => undefined))
 
@@ -237,8 +241,9 @@ export const register: Register = on => {
       ])
       opened = await $.ui.open({ id: PANE, title: 'Memories' })
     }
+    // The pane is the answer: no line in the chat, nothing in Claude's context.
     if (opened.isPlaced) {
-      return { text: 'Memories pane opened.' }
+      return {}
     }
 
     return {
@@ -246,7 +251,10 @@ export const register: Register = on => {
         ? 'Memories opens once the app connects to this session.'
         : `Memories pane not shown: ${opened.reason}`,
     }
-  })
+  }).catch(($, e, next) => ({
+    // Says why, where a skipped hook would leave only "no hook answered".
+    text: `Memories could not open: ${next.error.message ?? next.error.kind}`,
+  }))
 
   // Keeps the pane current when Claude writes or removes a memory.
   on('tool.call', async ($, e, next) => {

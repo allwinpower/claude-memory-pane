@@ -1,5 +1,5 @@
 import { expect, mock, test } from 'claude-code/testing'
-import type { On } from 'claude-code'
+import type { CommandSpec, On } from 'claude-code'
 
 const DIR = '/home/me/.claude/projects/-work-app/memory'
 const PANE = {
@@ -30,18 +30,29 @@ const NOT_ATTACHED = 'no-surface: no surface is attached ($.session.surfaces() i
 
 // Stands for the engine: a worktree session of /work/app with no MEMORY.md
 // loaded yet, so the mod works the folder out from git. The app's window is
-// attached from the start unless a test says otherwise.
+// attached from the start unless a test says otherwise; `registered` collects
+// the commands the mod declares, and `openFails` makes `$.ui.open` refuse.
 const engine = (
   on: On,
   disk: Record<string, string>,
   runs: string[][],
-  app = { isAttached: true },
+  app: { isAttached: boolean; registered?: CommandSpec[]; openFails?: string } = {
+    isAttached: true,
+  },
 ) => {
   mock.env(on, { HOME: '/home/me' })
-  on('command.register', () => ({ value: { command: 'memories' } }))
-  on('ui.open', () => ({
-    value: app.isAttached ? { isPlaced: true } : { isPlaced: false, reason: NOT_ATTACHED },
-  }))
+  on('command.register', (_, e) => {
+    app.registered?.push(e)
+
+    return { value: { command: e.name } }
+  })
+  on('ui.open', () =>
+    app.openFails !== undefined
+      ? { deny: app.openFails }
+      : {
+          value: app.isAttached ? { isPlaced: true } : { isPlaced: false, reason: NOT_ATTACHED },
+        },
+  )
   on('session.attach', (_, e) => {
     app.isAttached = true
 
@@ -105,7 +116,24 @@ test('the first /memories of a new session waits for the app to attach', async (
   await clock.settle()
   await $.session.attach({ surface: 'desktop', clientId: 'desktop:default' })
 
-  expect((await ran).text).toBe('Memories pane opened.')
+  // The pane itself is the answer: no line for the chat or Claude's context.
+  expect((await ran).text).toBe(undefined)
+})
+
+test('/memories runs at once while Claude is working', async ($, on) => {
+  const registered: CommandSpec[] = []
+  engine(on, seed(), [], { isAttached: true, registered })
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+
+  expect(registered.find(command => command.name === 'memories')?.immediate).toBe(true)
+})
+
+test('a /memories that fails says why', async ($, on) => {
+  engine(on, seed(), [], { isAttached: true, openFails: 'pane refused' })
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  const { text } = await $.command.run({ command: 'memories' })
+
+  expect(text?.startsWith('Memories could not open:')).toBe(true)
 })
 
 test('with no app attached /memories says the pane opens once one does', async ($, on) => {
