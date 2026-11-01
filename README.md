@@ -45,7 +45,8 @@ In the desktop app, where `/plugin` does not run: click **+** next to the
 prompt box, then **Plugins**, **Add marketplace** with
 `allwinpower/claude-memory-pane`, then **Add plugin**.
 
-Then type `/memories` in any session.
+Then type `/memories` in any session. It opens the pane at once, even while
+Claude is working, and leaves no line in the chat.
 
 ## Requirements
 
