@@ -32,6 +32,8 @@ const NOT_ATTACHED = 'no-surface: no surface is attached ($.session.surfaces() i
 // loaded yet, so the mod works the folder out from git. The app's window is
 // attached from the start unless a test says otherwise; `registered` collects
 // the commands the mod declares, and `openFails` makes `$.ui.open` refuse.
+// The pane counts as open from its first open until a close; the returned
+// `closePane` closes it the way the engine does, unseen by the mod's hooks.
 const engine = (
   on: On,
   disk: Record<string, string>,
@@ -40,26 +42,38 @@ const engine = (
     isAttached: true,
   },
 ) => {
+  let isOpen = false
   mock.env(on, { HOME: '/home/me' })
   on('command.register', (_, e) => {
     app.registered?.push(e)
 
     return { value: { command: e.name } }
   })
-  on('ui.open', () =>
-    app.openFails !== undefined
-      ? { deny: app.openFails }
-      : {
-          value: app.isAttached ? { isPlaced: true } : { isPlaced: false, reason: NOT_ATTACHED },
-        },
-  )
+  on('ui.open', () => {
+    if (app.openFails !== undefined) {
+      return { deny: app.openFails }
+    }
+    isOpen = true
+
+    return {
+      value: app.isAttached ? { isPlaced: true } : { isPlaced: false, reason: NOT_ATTACHED },
+    }
+  })
+  // The engine's own band, drawn when the mod passes.
+  on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+    const { Text } = $.ui.resolve(e)
+
+    return <Text>engine band</Text>
+  })
   on('session.attach', (_, e) => {
     app.isAttached = true
 
     return { clientId: e.clientId }
   })
   on('ui.panes', () => ({
-    value: [{ id: 'memories', title: 'Memories', isShown: true, isFocused: false, isPlaced: true }],
+    value: isOpen
+      ? [{ id: 'memories', title: 'Memories', isShown: true, isFocused: false, isPlaced: true }]
+      : [],
   }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('session.usage', () => ({ deny: 'no breakdown in tests' }))
@@ -99,6 +113,12 @@ const engine = (
 
     return { value: undefined }
   })
+
+  return {
+    closePane: () => {
+      isOpen = false
+    },
+  }
 }
 
 const open = async ($: Parameters<Parameters<typeof test>[1]>[0]) => {
@@ -126,6 +146,48 @@ test('/memories runs at once while Claude is working', async ($, on) => {
   await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
 
   expect(registered.find(command => command.name === 'memories')?.immediate).toBe(true)
+})
+
+const BAND = {
+  plugin: 'memory-pane',
+  component: 'AbovePrompt',
+  props: {
+    hasSurvey: false,
+    isWorking: true,
+    maxRows: 10,
+    bodyColumns: 80,
+    scroll: { offset: 0, bodyRows: 10 },
+    view: {},
+  },
+} as const
+
+test('the Memories button opens the pane with no command, and hides while it is open', async ($, on) => {
+  engine(on, seed(), [])
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+
+  await band.press({ key: 'open-memories' })
+
+  expect(await band.find({ key: 'open-memories' })).toBe(undefined)
+  const pane = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  expect(await pane.find({ type: 'Text', text: '2 memories' })).toBeDefined()
+  await pane.unmount()
+  await band.unmount()
+})
+
+test('closing the pane brings the Memories button back', async ($, on) => {
+  const clock = mock.clock(on)
+  const { closePane } = engine(on, seed(), [])
+  await $.session.start({ cwd: '/work/app', surface: 'desktop', isInteractive: true })
+  const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  await band.press({ key: 'open-memories' })
+  expect(await band.find({ key: 'open-memories' })).toBe(undefined)
+
+  closePane()
+  await clock.advance(2000)
+
+  expect(await band.find({ key: 'open-memories' })).toBeDefined()
+  await band.unmount()
 })
 
 test('a /memories that fails says why', async ($, on) => {

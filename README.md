@@ -45,8 +45,12 @@ In the desktop app, where `/plugin` does not run: click **+** next to the
 prompt box, then **Plugins**, **Add marketplace** with
 `allwinpower/claude-memory-pane`, then **Add plugin**.
 
-Then type `/memories` in any session. It opens the pane at once, even while
-Claude is working, and leaves no line in the chat.
+Then press **Memories** in the band above the prompt box. It opens the pane
+at once, even while Claude is working, and leaves nothing in the chat or in
+Claude's context. The button hides while the pane is open.
+
+`/memories` opens it too, but Claude Code records every slash command it runs
+in the conversation, so Claude sees that you ran it.
 
 ## Requirements
 
