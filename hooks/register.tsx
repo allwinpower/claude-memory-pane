@@ -40,6 +40,9 @@ const notice = atom({ plugin: 'memory-pane', key: 'notice' } as const, '')
 const newDraft = atom({ plugin: 'memory-pane', key: 'newDraft' } as const, null, {
   shape: 'new-1',
 })
+// Whether the pane is open; the Memories button above the prompt hides while
+// it is.
+const isPaneOpen = atom({ plugin: 'memory-pane', key: 'isPaneOpen' } as const, false)
 
 // The folder the engine loaded this session's auto memory from; before the
 // folder has a MEMORY.md, the one it will write to.
@@ -88,10 +91,29 @@ const refresh = async ($: EngineInterface, isFresh = false): Promise<void> => {
   await update($, files, () => sortFiles(list))
 }
 
+// Records whether the pane is open, writing only a change so the button is
+// not redrawn for nothing; also catches a close no `ui.close` hook heard.
+const syncOpen = async ($: EngineInterface): Promise<boolean> => {
+  const isOpen = (await $.ui.panes()).some(pane => pane.id === PANE)
+  if ((await read($, isPaneOpen)) !== isOpen) {
+    await update($, isPaneOpen, () => isOpen)
+  }
+
+  return isOpen
+}
+
+// The Memories button's press: no command, so nothing in the chat or in
+// Claude's context. A press comes from a window, so the pane has one to draw in.
+const openFromButton = async ($: EngineInterface): Promise<void> => {
+  await refresh($, true)
+  await $.ui.open({ id: PANE, title: 'Memories' })
+  await syncOpen($)
+}
+
 // Reloads the list when a memory was added, changed or removed since the
 // last reading; nothing while the pane is closed.
 const pollOnce = async ($: EngineInterface): Promise<void> => {
-  const isOpen = (await $.ui.panes()).some(pane => pane.id === PANE)
+  const isOpen = await syncOpen($)
   const dir = await read($, dirAtom)
   if (!isOpen || dir === '') {
     return
@@ -241,6 +263,7 @@ export const register: Register = on => {
       ])
       opened = await $.ui.open({ id: PANE, title: 'Memories' })
     }
+    await syncOpen($)
     // The pane is the answer: no line in the chat, nothing in Claude's context.
     if (opened.isPlaced) {
       return {}
@@ -273,6 +296,31 @@ export const register: Register = on => {
 
     return ran
   }).catch(($, e, next) => next(e)) // a failed refresh never holds up the tool
+
+  // Brings the Memories button back the moment the pane closes.
+  on('ui.close', async ($, e, next) => {
+    const closed = await next(e)
+    if (e.id === PANE) {
+      await update($, isPaneOpen, () => false)
+    }
+
+    return closed
+  })
+
+  // A one-line Memories button above the prompt: opens the pane without a
+  // slash command, whose run Claude Code would record in the conversation.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey || (await read($, isPaneOpen))) {
+      return next(e)
+    }
+    const { Box, Button } = $.ui.resolve(e)
+
+    return (
+      <Box>
+        <Button key="open-memories" label="Memories" plain dimColor onPress={() => openFromButton($)} />
+      </Box>
+    )
+  })
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const elements = $.ui.resolve(e)

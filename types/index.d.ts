@@ -19,6 +19,7 @@ declare module 'claude-code' {
       confirming: string | null
       notice: string
       newDraft: Shaped<NewMemory | null>
+      isPaneOpen: boolean
     }
   }
 }
