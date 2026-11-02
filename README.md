@@ -1,7 +1,7 @@
 # memory-pane
 
-A Claude Code mod that adds a `/memories` pane: it lists the auto memory
-Claude keeps for the current project and lets you edit or delete each entry
+A Claude Code mod that adds a Memories pane: it lists the auto memory Claude
+keeps for the current project and lets you add, edit or delete entries
 without leaving the session.
 
 Claude's auto memory lives in `~/.claude/projects/<project>/memory/`: one
@@ -47,7 +47,9 @@ prompt box, then **Plugins**, **Add marketplace** with
 
 Then press **Memories** in the band above the prompt box. It opens the pane
 at once, even while Claude is working, and leaves nothing in the chat or in
-Claude's context. The button hides while the pane is open.
+Claude's context. The button hides while the pane is open. (The app's top
+toolbar takes no plugin buttons; the band above the prompt is the one place
+a plugin can put one.)
 
 `/memories` opens it too, but Claude Code records every slash command it runs
 in the conversation, so Claude sees that you ran it.
