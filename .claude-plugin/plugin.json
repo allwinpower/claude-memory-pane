@@ -1,7 +1,7 @@
 {
   "name": "memory-pane",
-  "version": "0.4.0",
-  "description": "A /memories pane that lists this project's auto memory and lets you edit or delete each entry",
+  "version": "0.4.1",
+  "description": "A Memories pane for this project's auto memory: add, edit and delete entries. Opens from a button above the prompt, or /memories",
   "author": { "name": "allwinpower" },
   "license": "MIT",
   "types": "./types/index.d.ts"
